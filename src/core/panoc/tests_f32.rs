@@ -6,7 +6,7 @@ use crate::{mocks, FunctionCallResult};
 const N_DIM: usize = 2;
 #[test]
 fn t_panoc_init() {
-    let radius = 0.2;
+    let radius = 0.2_f32;
     let ball = constraints::Ball2::new(None, radius);
     let problem = Problem::new(&ball, mocks::my_gradient, mocks::my_cost);
     let mut panoc_cache = PANOCCache::new(N_DIM, 1e-6, 5);
@@ -57,7 +57,7 @@ fn print_panoc_engine<GradientType, ConstraintType, CostType, T>(
 
 #[test]
 fn t_test_panoc_basic() {
-    let bounds = constraints::Ball2::new(None, 0.2);
+    let bounds = constraints::Ball2::new(None, 0.2_f32);
     let problem = Problem::new(&bounds, mocks::my_gradient, mocks::my_cost);
     let tolerance = 1e-9;
     let mut panoc_cache = PANOCCache::new(2, tolerance, 5);
@@ -80,12 +80,12 @@ fn t_test_panoc_basic() {
     }
     println!("final |fpr| = {}", panoc_engine.cache.norm_gamma_fpr);
     assert!(panoc_engine.cache.norm_gamma_fpr <= tolerance);
-    unit_test_utils::assert_nearly_equal_array(&u, &mocks::SOLUTION_A, 1e-6, 1e-8, "");
+    unit_test_utils::assert_nearly_equal_array(&u, &mocks::SOLUTION_A_F32, 1e-6, 1e-8, "");
 }
 
 #[test]
 fn t_test_panoc_hard() {
-    let radius: f64 = 0.05;
+    let radius: f32 = 0.05_f32;
     let bounds = constraints::Ball2::new(None, radius);
     let problem = Problem::new(
         &bounds,
@@ -94,11 +94,11 @@ fn t_test_panoc_hard() {
     );
     let n: usize = 3;
     let lbfgs_memory: usize = 10;
-    let tolerance_fpr: f64 = 1e-12;
+    let tolerance_fpr: f32 = 1e-12;
     let mut panoc_cache = PANOCCache::new(n, tolerance_fpr, lbfgs_memory);
     let mut panoc_engine = PANOCEngine::new(problem, &mut panoc_cache);
 
-    let mut u = [-20., 10., 0.2];
+    let mut u = [-20.0, 10., 0.2];
     panoc_engine.init(&mut u).unwrap();
 
     println!("L     = {}", panoc_engine.cache.lipschitz_constant);
@@ -115,19 +115,19 @@ fn t_test_panoc_hard() {
 
     println!("\nsol = {:?}", u);
     assert!(panoc_engine.cache.norm_gamma_fpr <= tolerance_fpr);
-    unit_test_utils::assert_nearly_equal_array(&u, &mocks::SOLUTION_HARD, 1e-6, 1e-8, "");
+    unit_test_utils::assert_nearly_equal_array(&u, &mocks::SOLUTION_HARD_F32, 1e-6, 1e-8, "");
 }
 
 #[test]
 fn t_test_panoc_rosenbrock() {
-    let tolerance = 1e-12;
+    let tolerance = 1e-12_f32;
     let a_param = 1.0;
     let b_param = 100.0;
-    let cost_gradient = |u: &[f64], grad: &mut [f64]| -> FunctionCallResult {
+    let cost_gradient = |u: &[f32], grad: &mut [f32]| -> FunctionCallResult {
         mocks::rosenbrock_grad(a_param, b_param, u, grad);
         Ok(())
     };
-    let cost_function = |u: &[f64], c: &mut f64| -> FunctionCallResult {
+    let cost_function = |u: &[f32], c: &mut f32| -> FunctionCallResult {
         *c = mocks::rosenbrock_cost(a_param, b_param, u);
         Ok(())
     };
@@ -147,18 +147,18 @@ fn t_test_panoc_rosenbrock() {
 
 #[test]
 fn t_zero_gamma_l() {
-    let tolerance = 1e-8;
+    let tolerance = 1e-8_f32;
     let mut panoc_cache = PANOCCache::new(1, tolerance, 5);
     let u = &mut [1e6];
 
     // Define the cost function and its gradient.
-    let df = |u: &[f64], grad: &mut [f64]| -> Result<(), SolverError> {
+    let df = |u: &[f32], grad: &mut [f32]| -> Result<(), SolverError> {
         grad[0] = u[0].signum();
 
         Ok(())
     };
 
-    let f = |u: &[f64], c: &mut f64| -> Result<(), SolverError> {
+    let f = |u: &[f32], c: &mut f32| -> Result<(), SolverError> {
         *c = u[0].abs();
         Ok(())
     };
@@ -180,13 +180,13 @@ fn t_zero_gamma_l() {
 
 #[test]
 fn t_zero_gamma_huber() {
-    let tolerance = 1e-8;
+    let tolerance = 1e-8_f32;
     let mut panoc_cache = PANOCCache::new(1, tolerance, 10);
     let u = &mut [1e6];
     let huber_delta = 1e-6;
 
     // Define the cost function and its gradient.
-    let df = |u: &[f64], grad: &mut [f64]| -> Result<(), SolverError> {
+    let df = |u: &[f32], grad: &mut [f32]| -> Result<(), SolverError> {
         let u_abs = u[0].abs();
         if u_abs >= huber_delta {
             grad[0] = huber_delta * u[0].signum();
@@ -196,7 +196,7 @@ fn t_zero_gamma_huber() {
         Ok(())
     };
 
-    let huber_norm = |u: &[f64], y: &mut f64| -> Result<(), SolverError> {
+    let huber_norm = |u: &[f32], y: &mut f32| -> Result<(), SolverError> {
         let u_abs = u[0].abs();
         if u_abs <= huber_delta {
             *y = 0.5 * u[0].powi(2);

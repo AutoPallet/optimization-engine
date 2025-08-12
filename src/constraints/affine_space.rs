@@ -1,4 +1,5 @@
 use super::Constraint;
+use crate::core::OptFloat;
 
 extern crate modcholesky;
 extern crate ndarray;
@@ -13,16 +14,24 @@ type OpenVec<T> = ArrayBase<OwnedRepr<T>, Dim<[usize; 1]>>;
 /// An affine space here is defined as the set of solutions of a linear equation, $Ax = b$,
 /// that is, $E=\\{x\in\mathbb{R}^n: Ax = b\\}$, which is an affine space. It is assumed that
 /// the matrix $AA^\intercal$ is full-rank.
-pub struct AffineSpace {
-    a_mat: OpenMat<f64>,
-    b_vec: OpenVec<f64>,
-    l: OpenMat<f64>,
+pub struct AffineSpace<T>
+where
+    T: OptFloat,
+{
+    a_mat: OpenMat<T>,
+    b_vec: OpenVec<T>,
+    l: OpenMat<T>,
     p: OpenVec<usize>,
     n_rows: usize,
     n_cols: usize,
 }
 
-impl AffineSpace {
+impl<T> AffineSpace<T>
+where
+    T: OptFloat + 'static,
+    ndarray::Array2<T>:
+        ModCholeskySE99<ndarray::Array2<T>, ndarray::Array1<T>, ndarray::Array1<usize>>,
+{
     /// Construct a new affine space given the matrix $A\in\mathbb{R}^{m\times n}$ and
     /// the vector $b\in\mathbb{R}^m$
     ///
@@ -34,7 +43,7 @@ impl AffineSpace {
     /// ## Returns
     /// New Affine Space structure
     ///
-    pub fn new(a: Vec<f64>, b: Vec<f64>) -> Self {
+    pub fn new(a: Vec<T>, b: Vec<T>) -> Self {
         // Infer dimensions of A and b
         let n_rows = b.len();
         let n_elements_a = a.len();
@@ -67,7 +76,10 @@ impl AffineSpace {
     }
 }
 
-impl Constraint for AffineSpace {
+impl<T> Constraint<T> for AffineSpace<T>
+where
+    T: OptFloat + 'static,
+{
     /// Projection onto the set $E = \\{x: Ax = b\\}$, which is computed by
     /// $$P_E(x) = x - A^\intercal z(x),$$
     /// where $z$ is the solution of the linear system
@@ -99,7 +111,7 @@ impl Constraint for AffineSpace {
     /// ```
     ///
     /// The result is stored in `x` and it can be verified that $Ax = b$.
-    fn project(&self, x: &mut [f64]) {
+    fn project(&self, x: &mut [T]) {
         let m = self.n_rows;
         let n = self.n_cols;
         let chol = &self.l;
@@ -114,21 +126,23 @@ impl Constraint for AffineSpace {
         // Step 1: Solve Ly = b(P)
         // TODO: Make `y` into an attribute; however, to do this, we need to change
         // &self to &mut self, which will require a mild refactoring
-        let mut y = vec![0.; m];
+        let mut y = vec![T::zero(); m];
         for i in 0..m {
             y[i] = err[perm[i]];
             for j in 0..i {
-                y[i] -= chol[(i, j)] * y[j];
+                let val = y[j];
+                y[i] -= chol[(i, j)] * val;
             }
             y[i] /= chol[(i, i)];
         }
 
         // Step 2: Solve L'z(P) = y
-        let mut z = vec![0.; m];
+        let mut z = vec![T::zero(); m];
         for i in 1..=m {
             z[perm[m - i]] = y[m - i];
             for j in 1..i {
-                z[perm[m - i]] -= chol[(m - j, m - i)] * z[perm[m - j]];
+                let val = z[perm[m - j]];
+                z[perm[m - i]] -= chol[(m - j, m - i)] * val;
             }
             z[perm[m - i]] /= chol[(m - i, m - i)];
         }
@@ -138,7 +152,7 @@ impl Constraint for AffineSpace {
         let w = self.a_mat.t().dot(&z_arr);
 
         // Step 4: x <-- x - A'(AA')\(Ax-b)
-        x.iter_mut().zip(w.iter()).for_each(|(xi, wi)| *xi -= wi);
+        x.iter_mut().zip(w.iter()).for_each(|(xi, wi)| *xi -= *wi);
     }
 
     /// Affine sets are convex.

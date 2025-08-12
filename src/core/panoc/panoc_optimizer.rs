@@ -1,37 +1,36 @@
 //! PANOC optimizer
 //!
-use crate::{
-    constraints,
-    core::{
-        panoc::panoc_engine::PANOCEngine, panoc::PANOCCache, AlgorithmEngine, ExitStatus,
-        Optimizer, Problem, SolverStatus,
-    },
-    matrix_operations, FunctionCallResult, SolverError,
-};
 use std::time;
+
+use crate::core::panoc::panoc_engine::PANOCEngine;
+use crate::core::panoc::PANOCCache;
+use crate::core::{AlgorithmEngine, ExitStatus, OptFloat, Optimizer, Problem, SolverStatus};
+use crate::{constraints, matrix_operations, FunctionCallResult, SolverError};
 
 const MAX_ITER: usize = 100_usize;
 
 /// Optimizer using the PANOC algorithm
 ///
 ///
-pub struct PANOCOptimizer<'a, GradientType, ConstraintType, CostType>
+pub struct PANOCOptimizer<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat,
 {
-    panoc_engine: PANOCEngine<'a, GradientType, ConstraintType, CostType>,
+    panoc_engine: PANOCEngine<'a, GradientType, ConstraintType, CostType, T>,
     max_iter: usize,
     max_duration: Option<time::Duration>,
 }
 
-impl<'a, GradientType, ConstraintType, CostType>
-    PANOCOptimizer<'a, GradientType, ConstraintType, CostType>
+impl<'a, GradientType, ConstraintType, CostType, T>
+    PANOCOptimizer<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat,
 {
     /// Constructor of `PANOCOptimizer`
     ///
@@ -44,8 +43,8 @@ where
     ///
     /// Does not panic
     pub fn new(
-        problem: Problem<'a, GradientType, ConstraintType, CostType>,
-        cache: &'a mut PANOCCache,
+        problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
+        cache: &'a mut PANOCCache<T>,
     ) -> Self {
         PANOCOptimizer {
             panoc_engine: PANOCEngine::new(problem, cache),
@@ -62,8 +61,8 @@ where
     /// ## Panics
     ///
     /// The method panics if the specified tolerance is not positive
-    pub fn with_tolerance(self, tolerance: f64) -> Self {
-        assert!(tolerance > 0.0, "tolerance must be larger than 0");
+    pub fn with_tolerance(self, tolerance: T) -> Self {
+        assert!(tolerance > T::zero(), "tolerance must be larger than 0");
 
         self.panoc_engine.cache.tolerance = tolerance;
         self
@@ -90,8 +89,11 @@ where
     /// The method panics if the provided value of the AKKT-specific tolerance is
     /// not positive.
     ///
-    pub fn with_akkt_tolerance(self, akkt_tolerance: f64) -> Self {
-        assert!(akkt_tolerance > 0.0, "akkt_tolerance must be positive");
+    pub fn with_akkt_tolerance(self, akkt_tolerance: T) -> Self {
+        assert!(
+            akkt_tolerance > T::zero(),
+            "akkt_tolerance must be positive"
+        );
         self.panoc_engine.cache.set_akkt_tolerance(akkt_tolerance);
         self
     }
@@ -115,14 +117,15 @@ where
     }
 }
 
-impl<'life, GradientType, ConstraintType, CostType> Optimizer
-    for PANOCOptimizer<'life, GradientType, ConstraintType, CostType>
+impl<'life, GradientType, ConstraintType, CostType, T> Optimizer<T>
+    for PANOCOptimizer<'life, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult + 'life,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint + 'life,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult + 'life,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T> + 'life,
+    T: OptFloat,
 {
-    fn solve(&mut self, u: &mut [f64]) -> Result<SolverStatus, SolverError> {
+    fn solve(&mut self, u: &mut [T]) -> Result<SolverStatus<T>, SolverError> {
         let now = instant::Instant::now();
 
         /*

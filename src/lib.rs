@@ -58,14 +58,12 @@ pub mod core;
 pub mod lipschitz_estimator;
 pub mod matrix_operations;
 
-pub use crate::core::fbs;
-pub use crate::core::panoc;
-pub use crate::core::{AlgorithmEngine, Optimizer, Problem};
-
 /* Use Jemalloc if the feature `jem` is activated */
 #[cfg(not(target_env = "msvc"))]
 #[cfg(feature = "jem")]
 use jemallocator::Jemalloc;
+
+pub use crate::core::{fbs, panoc, AlgorithmEngine, OptFloat, Optimizer, Problem};
 
 #[cfg(not(target_env = "msvc"))]
 #[cfg(feature = "jem")]

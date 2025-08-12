@@ -80,7 +80,7 @@ rustdoc-args = ["--html-in-header", "katex-header.html"]
 num = "0.4"
 
 # Our own stuff - L-BFGS: limited-memory BFGS directions
-lbfgs = "0.2"
+lbfgs = { version = "0.2" }
 
 # Instant is a generic timer that works on Wasm (with wasm-bindgen)
 instant = { version = "0.1" }
@@ -147,3 +147,7 @@ travis-ci = { repository = "alphaville/optimization-engine", branch = "master" }
 
 # Actively maintained badge
 maintenance = { status = "actively-developed" }
+
+[patch.crates-io]
+# Add support for generic floating point types
+lbfgs = { git = "https://github.com/AutoPallet/lbfgs-rs.git", rev = "9f450872cb2da6bc7d3ebb79f32e29550689ecb0" }

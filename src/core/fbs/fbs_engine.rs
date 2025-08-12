@@ -1,29 +1,29 @@
 //! FBS Engine
 //!
-use crate::{
-    constraints,
-    core::{fbs::FBSCache, AlgorithmEngine, Problem},
-    matrix_operations, FunctionCallResult, SolverError,
-};
+use crate::core::fbs::FBSCache;
+use crate::core::{AlgorithmEngine, OptFloat, Problem};
+use crate::{constraints, matrix_operations, FunctionCallResult, SolverError};
 
 /// The FBE Engine defines the steps of the FBE algorithm and the termination criterion
 ///
-pub struct FBSEngine<'a, GradientType, ConstraintType, CostType>
+pub struct FBSEngine<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat,
 {
-    pub(crate) problem: Problem<'a, GradientType, ConstraintType, CostType>,
-    pub(crate) cache: &'a mut FBSCache,
+    pub(crate) problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
+    pub(crate) cache: &'a mut FBSCache<T>,
 }
 
-impl<'a, GradientType, ConstraintType, CostType>
-    FBSEngine<'a, GradientType, ConstraintType, CostType>
+impl<'a, GradientType, ConstraintType, CostType, T>
+    FBSEngine<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat,
 {
     /// Constructor for instances of `FBSEngine`
     ///
@@ -36,13 +36,13 @@ where
     ///
     /// An new instance of `FBSEngine`
     pub fn new(
-        problem: Problem<'a, GradientType, ConstraintType, CostType>,
-        cache: &'a mut FBSCache,
-    ) -> FBSEngine<'a, GradientType, ConstraintType, CostType> {
+        problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
+        cache: &'a mut FBSCache<T>,
+    ) -> FBSEngine<'a, GradientType, ConstraintType, CostType, T> {
         FBSEngine { problem, cache }
     }
 
-    fn gradient_step(&mut self, u_current: &mut [f64]) {
+    fn gradient_step(&mut self, u_current: &mut [T]) {
         assert_eq!(
             Ok(()),
             (self.problem.gradf)(u_current, &mut self.cache.work_gradient_u),
@@ -56,17 +56,18 @@ where
             .for_each(|(u, w)| *u -= self.cache.gamma * *w);
     }
 
-    fn projection_step(&mut self, u_current: &mut [f64]) {
+    fn projection_step(&mut self, u_current: &mut [T]) {
         self.problem.constraints.project(u_current);
     }
 }
 
-impl<'a, GradientType, ConstraintType, CostType> AlgorithmEngine
-    for FBSEngine<'a, GradientType, ConstraintType, CostType>
+impl<'a, GradientType, ConstraintType, CostType, T> AlgorithmEngine<T>
+    for FBSEngine<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult + 'a,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult + 'a,
-    ConstraintType: constraints::Constraint + 'a,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult + 'a,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult + 'a,
+    ConstraintType: constraints::Constraint<T> + 'a,
+    T: OptFloat,
 {
     /// Take a forward-backward step and check whether the algorithm should terminate
     ///
@@ -83,7 +84,7 @@ where
     ///
     /// The method may panick if the computation of the gradient of the cost function
     /// or the cost function panics.
-    fn step(&mut self, u_current: &mut [f64]) -> Result<bool, SolverError> {
+    fn step(&mut self, u_current: &mut [T]) -> Result<bool, SolverError> {
         self.cache.work_u_previous.copy_from_slice(u_current); // cache the previous step
         self.gradient_step(u_current); // compute the gradient
         self.projection_step(u_current); // project
@@ -93,7 +94,7 @@ where
         Ok(self.cache.norm_fpr > self.cache.tolerance)
     }
 
-    fn init(&mut self, _u_current: &mut [f64]) -> FunctionCallResult {
+    fn init(&mut self, _u_current: &mut [T]) -> FunctionCallResult {
         Ok(())
     }
 }

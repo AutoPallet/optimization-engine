@@ -1,22 +1,35 @@
-use crate::matrix_operations;
-
 use super::Constraint;
+use crate::core::OptFloat;
+use crate::matrix_operations;
 
 #[derive(Copy, Clone, Default)]
 /// The epigraph of the squared Eucliden norm is a set of the form
 /// $X = \\{x = (z, t) \in \mathbb{R}^{n}\times \mathbb{R} {}:{} \\|z\\|^2 \leq t \\}.$
-pub struct EpigraphSquaredNorm {}
+pub struct EpigraphSquaredNorm<T>
+where
+    T: OptFloat,
+{
+    _phantom: std::marker::PhantomData<T>,
+}
 
-impl EpigraphSquaredNorm {
+impl<T> EpigraphSquaredNorm<T>
+where
+    T: OptFloat,
+{
     /// Create a new instance of the epigraph of the squared norm.
     ///
     /// Note that you do not need to specify the dimension.
     pub fn new() -> Self {
-        EpigraphSquaredNorm {}
+        EpigraphSquaredNorm {
+            _phantom: std::marker::PhantomData,
+        }
     }
 }
 
-impl Constraint for EpigraphSquaredNorm {
+impl<T> Constraint<T> for EpigraphSquaredNorm<T>
+where
+    T: OptFloat + num::FromPrimitive + roots::FloatType,
+{
     ///Project on the epigraph of the squared Euclidean norm.
     ///
     /// The projection is computed as detailed
@@ -34,31 +47,32 @@ impl Constraint for EpigraphSquaredNorm {
     /// let mut x = [1., 2., 3., 4.];    
     /// epi.project(&mut x);
     /// ```
-    fn project(&self, x: &mut [f64]) {
+    fn project(&self, x: &mut [T]) {
         let nx = x.len() - 1;
         assert!(nx > 0, "x must have a length of at least 2");
-        let z: &[f64] = &x[..nx];
-        let t: f64 = x[nx];
+        let z: &[T] = &x[..nx];
+        let t: T = x[nx];
         let norm_z_sq = matrix_operations::norm2_squared(z);
         if norm_z_sq <= t {
             return;
         }
 
-        let theta = 1. - 2. * t;
-        let a3 = 4.;
-        let a2 = 4. * theta;
+        let theta = <T as num::One>::one() - T::from_f64(2.0).unwrap() * t;
+        let a3 = T::from_f64(4.0).unwrap();
+        let a2 = T::from_f64(4.0).unwrap() * theta;
         let a1 = theta * theta;
         let a0 = -norm_z_sq;
 
         let cubic_poly_roots = roots::find_roots_cubic(a3, a2, a1, a0);
-        let mut right_root = f64::NAN;
-        let mut scaling = f64::NAN;
+        let mut right_root = T::nan();
+        let mut scaling = T::nan();
 
         // Find right root
         cubic_poly_roots.as_ref().iter().for_each(|ri| {
-            if *ri > 0. {
-                let denom = 1. + 2. * (*ri - t);
-                if ((norm_z_sq / (denom * denom)) - *ri).abs() < 1e-6 {
+            if *ri > <T as num::Zero>::zero() {
+                let denom = <T as num::One>::one() + T::from_f64(2.0).unwrap() * (*ri - t);
+                let tolerance = T::from_f64(1e-6).unwrap();
+                if num::Float::abs((norm_z_sq / (denom * denom)) - *ri) < tolerance {
                     right_root = *ri;
                     scaling = denom;
                 }
@@ -66,25 +80,27 @@ impl Constraint for EpigraphSquaredNorm {
         });
 
         // Refinement of root with Newton-Raphson
-        let mut refinement_error = 1.;
+        let mut refinement_error = <T as num::One>::one();
         let newton_max_iters: usize = 5;
-        let newton_eps = 1e-14;
+        let newton_eps = T::from_f64(1e-14).unwrap();
         let mut zsol = right_root;
         let mut iter = 0;
         while refinement_error > newton_eps && iter < newton_max_iters {
             let zsol_sq = zsol * zsol;
             let zsol_cb = zsol_sq * zsol;
             let p_z = a3 * zsol_cb + a2 * zsol_sq + a1 * zsol + a0;
-            let dp_z = 3. * a3 * zsol_sq + 2. * a2 * zsol + a1;
+            let dp_z = T::from_f64(3.0).unwrap() * a3 * zsol_sq
+                + T::from_f64(2.0).unwrap() * a2 * zsol
+                + a1;
             zsol -= p_z / dp_z;
-            refinement_error = p_z.abs();
+            refinement_error = num::Float::abs(p_z);
             iter += 1;
         }
         right_root = zsol;
 
         // Projection
         for xi in x.iter_mut().take(nx) {
-            *xi /= scaling;
+            *xi = *xi / scaling;
         }
         x[nx] = right_root;
     }

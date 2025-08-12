@@ -1,4 +1,5 @@
 use super::Constraint;
+use crate::core::OptFloat;
 use crate::matrix_operations;
 
 #[derive(Clone, Copy)]
@@ -17,11 +18,17 @@ use crate::matrix_operations;
 /// 1996 doctoral dissertation: Projection Algorithms and Monotone Operators
 /// (p. 40, Theorem 3.3.6).
 ///
-pub struct SecondOrderCone {
-    alpha: f64,
+pub struct SecondOrderCone<T>
+where
+    T: OptFloat,
+{
+    alpha: T,
 }
 
-impl SecondOrderCone {
+impl<T> SecondOrderCone<T>
+where
+    T: OptFloat,
+{
     /// Construct a new instance of SecondOrderCone with parameter `alpha`
     ///
     /// A second-order cone with parameter alpha is the set
@@ -39,13 +46,16 @@ impl SecondOrderCone {
     /// # Panics
     ///
     /// The method panics if the given parameter `alpha` is nonpositive.
-    pub fn new(alpha: f64) -> SecondOrderCone {
-        assert!(alpha > 0.0); // alpha must be positive
+    pub fn new(alpha: T) -> SecondOrderCone<T> {
+        assert!(alpha > T::zero()); // alpha must be positive
         SecondOrderCone { alpha }
     }
 }
 
-impl Constraint for SecondOrderCone {
+impl<T> Constraint<T> for SecondOrderCone<T>
+where
+    T: OptFloat,
+{
     /// Project on the second-order cone (updates the given vector/slice)
     ///
     /// # Arguments
@@ -57,7 +67,7 @@ impl Constraint for SecondOrderCone {
     ///
     /// The methods panics is the length of `x` is less than 2.
     ///
-    fn project(&self, x: &mut [f64]) {
+    fn project(&self, x: &mut [T]) {
         // x = (z, r)
         let n = x.len();
         assert!(n >= 2, "x must be of dimension at least 2");
@@ -65,12 +75,12 @@ impl Constraint for SecondOrderCone {
         let r = x[n - 1];
         let norm_z = matrix_operations::norm2(z);
         if self.alpha * norm_z <= -r {
-            x.iter_mut().for_each(|v| *v = 0.0);
+            x.iter_mut().for_each(|v| *v = T::zero());
         } else if norm_z > self.alpha * r {
-            let beta = (self.alpha * norm_z + r) / (self.alpha.powi(2) + 1.0);
+            let beta = (self.alpha * norm_z + r) / (self.alpha.powi(2) + T::one());
             x[..n - 1]
                 .iter_mut()
-                .for_each(|v| *v *= self.alpha * beta / norm_z);
+                .for_each(|v| *v = *v * self.alpha * beta / norm_z);
             x[n - 1] = beta;
         }
     }

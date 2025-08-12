@@ -1,7 +1,6 @@
-use crate::matrix_operations;
+use rand;
 
 use super::*;
-use rand;
 
 #[test]
 fn t_zero_set() {
@@ -268,7 +267,7 @@ fn t_ball2_at_origin_different_radius_inside() {
 
 #[test]
 fn t_ball2_at_center_different_radius_outside() {
-    let radius = 1.2;
+    let radius = 1.2_f64;
     let mut x = [1.0, 1.0];
     let center = [-0.8, -1.1];
     let ball = Ball2::new(Some(&center), radius);
@@ -430,7 +429,7 @@ fn t_second_order_cone_case_ii() {
 
 #[test]
 fn t_second_order_cone_case_iii() {
-    let alpha = 1.5;
+    let alpha = 1.5_f64;
     let soc = SecondOrderCone::new(alpha);
     let mut x = vec![1.0, 1.0, 0.1];
     soc.project(&mut x);
@@ -615,7 +614,7 @@ fn t_is_convex_soc() {
 #[test]
 fn t_is_convex_zero() {
     let zero = Zero::new();
-    assert!(zero.is_convex());
+    assert!(<Zero as Constraint<f64>>::is_convex(&zero));
 }
 
 #[test]
@@ -897,7 +896,7 @@ fn t_epigraph_squared_norm() {
         let t = 0.01 * i as f64;
         let mut x = [1., 2., 3., t];
         epi.project(&mut x);
-        let err = (matrix_operations::norm2_squared(&x[..3]) - x[3]).abs();
+        let err = (crate::matrix_operations::norm2_squared(&x[..3]) - x[3]).abs();
         assert!(err < 1e-10, "wrong projection on epigraph of squared norm");
     }
 }
@@ -987,5 +986,5 @@ fn t_affine_space_single_row() {
 fn t_affine_space_wrong_dimensions() {
     let a = vec![0.5, 0.1, 0.2, -0.3, -0.6, 0.3, 0., 0.5, 1.0, 0.1, -1.0];
     let b = vec![1., 2., -0.5];
-    let _ = AffineSpace::new(a, b);
+    let _: AffineSpace<f64> = AffineSpace::new(a, b);
 }

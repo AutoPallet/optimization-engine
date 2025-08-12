@@ -1,52 +1,32 @@
-use crate::{
-    constraints,
-    core::{panoc::PANOCCache, AlgorithmEngine, Problem},
-    matrix_operations, FunctionCallResult, SolverError,
-};
-
-/// Mimum estimated Lipschitz constant (initial estimate)
-const MIN_L_ESTIMATE: f64 = 1e-10;
-
-/// gamma = GAMMA_L_COEFF/L
-const GAMMA_L_COEFF: f64 = 0.95;
-
-//const SIGMA_COEFF: f64 = 0.49;
-
-/// Delta in the estimation of the initial Lipschitz constant
-const DELTA_LIPSCHITZ: f64 = 1e-12;
-
-/// Epsilon in the estimation of the initial Lipschitz constant
-const EPSILON_LIPSCHITZ: f64 = 1e-6;
-
-/// Safety parameter used to check a strict inequality in the update of the Lipschitz constant
-const LIPSCHITZ_UPDATE_EPSILON: f64 = 1e-6;
+use crate::core::panoc::PANOCCache;
+use crate::core::{AlgorithmEngine, OptFloat, Problem};
+use crate::{constraints, matrix_operations, FunctionCallResult, SolverError};
 
 /// Maximum iterations of updating the Lipschitz constant
 const MAX_LIPSCHITZ_UPDATE_ITERATIONS: usize = 10;
-
-/// Maximum possible Lipschitz constant
-const MAX_LIPSCHITZ_CONSTANT: f64 = 1e9;
 
 /// Maximum number of linesearch iterations
 const MAX_LINESEARCH_ITERATIONS: u32 = 10;
 
 /// Engine for PANOC algorithm
-pub struct PANOCEngine<'a, GradientType, ConstraintType, CostType>
+pub struct PANOCEngine<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat,
 {
-    problem: Problem<'a, GradientType, ConstraintType, CostType>,
-    pub(crate) cache: &'a mut PANOCCache,
+    problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
+    pub(crate) cache: &'a mut PANOCCache<T>,
 }
 
-impl<'a, GradientType, ConstraintType, CostType>
-    PANOCEngine<'a, GradientType, ConstraintType, CostType>
+impl<'a, GradientType, ConstraintType, CostType, T>
+    PANOCEngine<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat,
 {
     /// Construct a new Engine for PANOC
     ///
@@ -60,28 +40,28 @@ where
     ///
     ///
     pub fn new(
-        problem: Problem<'a, GradientType, ConstraintType, CostType>,
-        cache: &'a mut PANOCCache,
-    ) -> PANOCEngine<'a, GradientType, ConstraintType, CostType> {
+        problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
+        cache: &'a mut PANOCCache<T>,
+    ) -> PANOCEngine<'a, GradientType, ConstraintType, CostType, T> {
         PANOCEngine { problem, cache }
     }
 
     /// Estimate the local Lipschitz constant at `u`
-    fn estimate_loc_lip(&mut self, u: &mut [f64]) -> FunctionCallResult {
+    fn estimate_loc_lip(&mut self, u: &mut [T]) -> FunctionCallResult {
         let mut lipest = crate::lipschitz_estimator::LipschitzEstimator::new(
             u,
             &self.problem.gradf,
             &mut self.cache.gradient_u,
         )
-        .with_delta(DELTA_LIPSCHITZ)
-        .with_epsilon(EPSILON_LIPSCHITZ);
+        .with_delta(T::delta_lipschitz())
+        .with_epsilon(T::epsilon_lipschitz());
         self.cache.lipschitz_constant = lipest.estimate_local_lipschitz()?;
 
         Ok(())
     }
 
     /// Computes the FPR and its norm
-    fn compute_fpr(&mut self, u_current: &[f64]) {
+    fn compute_fpr(&mut self, u_current: &[T]) {
         // compute the FPR:
         // fpr ← u - u_half_step
         let cache = &mut self.cache;
@@ -90,13 +70,13 @@ where
             .iter_mut()
             .zip(u_current.iter())
             .zip(cache.u_half_step.iter())
-            .for_each(|((fpr, u), uhalf)| *fpr = u - uhalf);
+            .for_each(|((fpr, u), uhalf)| *fpr = *u - *uhalf);
         // compute the norm of FPR
         cache.norm_gamma_fpr = matrix_operations::norm2(&cache.gamma_fpr);
     }
 
     /// Computes a gradient step; does not compute the gradient
-    fn gradient_step(&mut self, u_current: &[f64]) {
+    fn gradient_step(&mut self, u_current: &[T]) {
         // take a gradient step:
         // gradient_step ← u_current - gamma * gradient
         let cache = &mut self.cache;
@@ -132,7 +112,7 @@ where
     }
 
     /// Computes an LBFGS direction; updates `cache.direction_lbfgs`
-    fn lbfgs_direction(&mut self, u_current: &[f64]) {
+    fn lbfgs_direction(&mut self, u_current: &[T]) {
         let cache = &mut self.cache;
         // update the LBFGS buffer
         cache.lbfgs.update_hessian(&cache.gamma_fpr, u_current);
@@ -147,7 +127,7 @@ where
 
     /// Returns the RHS of the Lipschitz update
     /// Computes rhs = cost + LIP_EPS * |f| - gamma * <gradfx, fpr> + (L/2/gamma) ||gamma * fpr||^2
-    fn lipschitz_check_rhs(&mut self) -> f64 {
+    fn lipschitz_check_rhs(&mut self) -> T {
         let cache = &mut self.cache;
         let gamma = cache.gamma;
         let cost_value = cache.cost_value;
@@ -156,13 +136,14 @@ where
             matrix_operations::inner_product(&cache.gradient_u, &cache.gamma_fpr);
 
         // rhs ← cost + LIP_EPS * |f| - <gradfx, gamma_fpr> + (L/2/gamma) ||gamma_fpr||^2
-        cost_value + LIPSCHITZ_UPDATE_EPSILON * cost_value.abs() - inner_prod_grad_fpr
-            + (GAMMA_L_COEFF / (2.0 * gamma)) * (cache.norm_gamma_fpr.powi(2))
+        cost_value + T::lipschitz_update_epsilon() * cost_value.abs() - inner_prod_grad_fpr
+            + (T::gamma_l_coeff() / (T::from(2.0).unwrap() * gamma))
+                * (cache.norm_gamma_fpr.powi(2))
     }
 
     /// Updates the estimate of the Lipscthiz constant
-    fn update_lipschitz_constant(&mut self, u_current: &[f64]) -> FunctionCallResult {
-        let mut cost_u_half_step = 0.0;
+    fn update_lipschitz_constant(&mut self, u_current: &[T]) -> FunctionCallResult {
+        let mut cost_u_half_step = T::zero();
 
         // Compute the cost at the half step
         (self.problem.cost)(&self.cache.u_half_step, &mut cost_u_half_step)?;
@@ -174,13 +155,13 @@ where
 
         while cost_u_half_step > self.lipschitz_check_rhs()
             && it_lipschitz_search < MAX_LIPSCHITZ_UPDATE_ITERATIONS
-            && self.cache.lipschitz_constant < MAX_LIPSCHITZ_CONSTANT
+            && self.cache.lipschitz_constant < T::max_lipschitz_constant()
         {
             self.cache.lbfgs.reset(); // invalidate the L-BFGS buffer
 
             // update L, sigma and gamma...
-            self.cache.lipschitz_constant *= 2.;
-            self.cache.gamma /= 2.;
+            self.cache.lipschitz_constant = self.cache.lipschitz_constant * T::from(2.0).unwrap();
+            self.cache.gamma = self.cache.gamma / T::from(2.0).unwrap();
 
             // recompute the half step...
             self.gradient_step(u_current); // updates self.cache.gradient_step
@@ -194,17 +175,18 @@ where
             self.compute_fpr(u_current);
             it_lipschitz_search += 1;
         }
-        self.cache.sigma = (1.0 - GAMMA_L_COEFF) / (4.0 * self.cache.gamma);
+        self.cache.sigma =
+            (T::one() - T::gamma_l_coeff()) / (T::from(4.0).unwrap() * self.cache.gamma);
 
         Ok(())
     }
 
     /// Computes u_plus ← u - gamma * (1-tau) * fpr - tau * dir,
-    fn compute_u_plus(&mut self, u: &[f64]) {
+    fn compute_u_plus(&mut self, u: &[T]) {
         let cache = &mut self.cache;
         let _gamma = cache.gamma;
         let tau = cache.tau;
-        let temp_ = 1.0 - tau;
+        let temp_ = T::from(1.0).unwrap() - tau;
         cache
             .u_plus
             .iter_mut()
@@ -228,15 +210,17 @@ where
         //            + 0.5 * dist squared / gamma
         //            - sigma * norm_gamma_fpr^2
         let fbe = cache.cost_value
-            - 0.5 * cache.gamma * matrix_operations::norm2_squared(&cache.gradient_u)
-            + 0.5 * dist_squared / cache.gamma;
+            - T::from(0.5).unwrap()
+                * cache.gamma
+                * matrix_operations::norm2_squared(&cache.gradient_u)
+            + T::from(0.5).unwrap() * dist_squared / cache.gamma;
         let sigma_fpr_sq = cache.sigma * cache.norm_gamma_fpr.powi(2);
         cache.rhs_ls = fbe - sigma_fpr_sq;
     }
 
     /// Computes the left hand side of the line search condition and compares it with the RHS;
     /// returns `true` if and only if lhs > rhs (when the line search should continue)
-    fn line_search_condition(&mut self, u: &[f64]) -> Result<bool, SolverError> {
+    fn line_search_condition(&mut self, u: &[T]) -> Result<bool, SolverError> {
         let gamma = self.cache.gamma;
 
         // u_plus ← u - (1-tau)*gamma_fpr + tau*direction
@@ -259,14 +243,16 @@ where
 
         // Update the LHS of the line search condition
         self.cache.lhs_ls = self.cache.cost_value
-            - 0.5 * gamma * matrix_operations::norm2_squared(&self.cache.gradient_u)
-            + 0.5 * dist_squared / self.cache.gamma;
+            - T::from(0.5).unwrap()
+                * gamma
+                * matrix_operations::norm2_squared(&self.cache.gradient_u)
+            + T::from(0.5).unwrap() * dist_squared / self.cache.gamma;
 
         Ok(self.cache.lhs_ls > self.cache.rhs_ls)
     }
 
     /// Update without performing a line search; this is executed at the first iteration
-    fn update_no_linesearch(&mut self, u_current: &mut [f64]) -> FunctionCallResult {
+    fn update_no_linesearch(&mut self, u_current: &mut [T]) -> FunctionCallResult {
         u_current.copy_from_slice(&self.cache.u_half_step); // set u_current ← u_half_step
         (self.problem.cost)(u_current, &mut self.cache.cost_value)?; // cost value
         (self.problem.gradf)(u_current, &mut self.cache.gradient_u)?; // compute gradient
@@ -277,17 +263,17 @@ where
     }
 
     /// Performs a line search to select tau
-    fn linesearch(&mut self, u_current: &mut [f64]) -> FunctionCallResult {
+    fn linesearch(&mut self, u_current: &mut [T]) -> FunctionCallResult {
         // perform line search
         self.compute_rhs_ls(); // compute the right hand side of the line search
-        self.cache.tau = 1.0; // initialise tau ← 1.0
+        self.cache.tau = T::from(1.0).unwrap(); // initialise tau ← 1.0
         let mut num_ls_iters = 0;
         while self.line_search_condition(u_current)? && num_ls_iters < MAX_LINESEARCH_ITERATIONS {
-            self.cache.tau /= 2.0;
+            self.cache.tau = self.cache.tau / T::from(2.0).unwrap();
             num_ls_iters += 1;
         }
         if num_ls_iters == MAX_LINESEARCH_ITERATIONS {
-            self.cache.tau = 0.;
+            self.cache.tau = T::zero();
             u_current.copy_from_slice(&self.cache.u_half_step);
         }
         // Sets `u_current` to `u_plus` (u_current ← u_plus)
@@ -298,12 +284,13 @@ where
 }
 
 /// Implementation of the `step` and `init` methods of [trait.AlgorithmEngine.html]
-impl<'a, GradientType, ConstraintType, CostType> AlgorithmEngine
-    for PANOCEngine<'a, GradientType, ConstraintType, CostType>
+impl<'a, GradientType, ConstraintType, CostType, T> AlgorithmEngine<T>
+    for PANOCEngine<'a, GradientType, ConstraintType, CostType, T>
 where
-    GradientType: Fn(&[f64], &mut [f64]) -> FunctionCallResult,
-    CostType: Fn(&[f64], &mut f64) -> FunctionCallResult,
-    ConstraintType: constraints::Constraint,
+    GradientType: Fn(&[T], &mut [T]) -> FunctionCallResult,
+    CostType: Fn(&[T], &mut T) -> FunctionCallResult,
+    ConstraintType: constraints::Constraint<T>,
+    T: OptFloat + std::fmt::Debug,
 {
     /// PANOC step
     ///
@@ -315,7 +302,7 @@ where
     ///   iterate of PANOC
     ///
     ///
-    fn step(&mut self, u_current: &mut [f64]) -> Result<bool, SolverError> {
+    fn step(&mut self, u_current: &mut [T]) -> Result<bool, SolverError> {
         // caches the previous gradient vector (copies df to df_previous)
         self.cache.cache_previous_gradient();
 
@@ -349,12 +336,14 @@ where
     /// gradient of the cost at the initial point, initial estimates for `gamma` and `sigma`,
     /// a gradient step and a half step (projected gradient step)
     ///
-    fn init(&mut self, u_current: &mut [f64]) -> FunctionCallResult {
+    fn init(&mut self, u_current: &mut [T]) -> FunctionCallResult {
         self.cache.reset();
         (self.problem.cost)(u_current, &mut self.cache.cost_value)?; // cost value
         self.estimate_loc_lip(u_current)?; // computes the gradient as well! (self.cache.gradient_u)
-        self.cache.gamma = GAMMA_L_COEFF / f64::max(self.cache.lipschitz_constant, MIN_L_ESTIMATE);
-        self.cache.sigma = (1.0 - GAMMA_L_COEFF) / (4.0 * self.cache.gamma);
+        self.cache.gamma =
+            T::gamma_l_coeff() / T::max(self.cache.lipschitz_constant, T::min_l_estimate());
+        self.cache.sigma =
+            (T::one() - T::gamma_l_coeff()) / (T::from(4.0).unwrap() * self.cache.gamma);
         self.gradient_step(u_current); // updated self.cache.gradient_step
         self.half_step(); // updates self.cache.u_half_step
 
@@ -368,11 +357,10 @@ where
 #[cfg(test)]
 mod tests {
 
-    use crate::constraints;
     use crate::core::panoc::panoc_engine::PANOCEngine;
     use crate::core::panoc::*;
     use crate::core::Problem;
-    use crate::mocks;
+    use crate::{constraints, mocks};
 
     #[test]
     fn t_compute_fpr() {

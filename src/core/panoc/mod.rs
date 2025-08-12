@@ -11,3 +11,6 @@ pub use panoc_optimizer::PANOCOptimizer;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_f32;

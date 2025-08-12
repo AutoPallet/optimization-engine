@@ -1,8 +1,8 @@
-use crate::{
-    alm::*,
-    core::{constraints::*, panoc::*, ExitStatus},
-    matrix_operations, mocks, FunctionCallResult, SolverError,
-};
+use crate::alm::*;
+use crate::core::constraints::*;
+use crate::core::panoc::*;
+use crate::core::ExitStatus;
+use crate::{matrix_operations, mocks, FunctionCallResult, SolverError};
 
 #[test]
 fn t_create_alm_cache() {

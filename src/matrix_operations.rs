@@ -36,9 +36,10 @@
 //! ```
 //!
 
-use num::{Float, Zero};
 use std::iter::Sum;
 use std::ops::Mul;
+
+use num::{Float, Zero};
 
 /// Calculate the inner product of two vectors
 #[inline(always)]
@@ -74,10 +75,10 @@ where
 #[inline(always)]
 pub fn norm2_squared_diff<T>(a: &[T], b: &[T]) -> T
 where
-    T: Float + Sum<T> + Mul<T, Output = T> + std::ops::AddAssign,
+    T: Float + Sum<T> + Mul<T, Output = T>,
 {
     a.iter().zip(b.iter()).fold(T::zero(), |mut sum, (&x, &y)| {
-        sum += (x - y).powi(2);
+        sum = sum + (x - y).powi(2);
         sum
     })
 }

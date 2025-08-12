@@ -1,5 +1,5 @@
 use super::Constraint;
-
+use crate::core::OptFloat;
 #[derive(Clone, Copy, Default)]
 /// Set Zero, $\\{0\\}$
 pub struct Zero {}
@@ -11,11 +11,14 @@ impl Zero {
     }
 }
 
-impl Constraint for Zero {
+impl<T> Constraint<T> for Zero
+where
+    T: OptFloat,
+{
     /// Computes the projection on $\\{0\\}$, that is, $\Pi_{\\{0\\}}(x) = 0$
     /// for all $x$
-    fn project(&self, x: &mut [f64]) {
-        x.iter_mut().for_each(|xi| *xi = 0.0);
+    fn project(&self, x: &mut [T]) {
+        x.iter_mut().for_each(|xi| *xi = T::zero());
     }
 
     fn is_convex(&self) -> bool {

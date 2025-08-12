@@ -40,11 +40,16 @@ pub use soc::SecondOrderCone;
 pub use sphere2::Sphere2;
 pub use zero::Zero;
 
+use crate::core::OptFloat;
+
 /// A set which can be used as a constraint
 ///
 /// This trait defines an abstract function that allows to compute projections
 /// on sets; this is implemented by a series of structures (see below for details)
-pub trait Constraint {
+pub trait Constraint<T>
+where
+    T: OptFloat,
+{
     /// Projection onto the set, that is,
     ///
     /// $$
@@ -55,7 +60,7 @@ pub trait Constraint {
     ///
     /// - `x`: The given vector $x$ is updated with the projection on the set
     ///
-    fn project(&self, x: &mut [f64]);
+    fn project(&self, x: &mut [T]);
 
     /// Returns true if and only if the set is convex
     fn is_convex(&self) -> bool;

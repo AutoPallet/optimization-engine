@@ -1,8 +1,9 @@
+use std::num::NonZeroUsize;
+
 use super::super::*;
 use super::*;
 use crate::constraints;
 use crate::core::fbs::fbs_engine::FBSEngine;
-use std::num::NonZeroUsize;
 
 const N_DIM: usize = 2;
 

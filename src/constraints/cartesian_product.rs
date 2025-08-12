@@ -1,5 +1,5 @@
 use super::Constraint;
-
+use crate::core::OptFloat;
 /// Cartesian product of constraints
 ///
 /// Cartesian product of constraints, $C_0, C_1, \ldots, C_{n-1}$,
@@ -22,12 +22,18 @@ use super::Constraint;
 /// for all $i=0,\ldots, n-1$.
 ///
 #[derive(Default)]
-pub struct CartesianProduct<'a> {
+pub struct CartesianProduct<'a, T>
+where
+    T: OptFloat,
+{
     idx: Vec<usize>,
-    constraints: Vec<Box<dyn Constraint + 'a>>,
+    constraints: Vec<Box<dyn Constraint<T> + 'a>>,
 }
 
-impl<'a> CartesianProduct<'a> {
+impl<'a, T> CartesianProduct<'a, T>
+where
+    T: OptFloat,
+{
     /// Construct new instance of Cartesian product of constraints
     ///
     /// # Note
@@ -116,7 +122,7 @@ impl<'a> CartesianProduct<'a> {
     /// ```
     /// The method will panic if any of the associated projections panics.
     ///
-    pub fn add_constraint(mut self, ni: usize, constraint: impl Constraint + 'a) -> Self {
+    pub fn add_constraint(mut self, ni: usize, constraint: impl Constraint<T> + 'a) -> Self {
         assert!(
             self.dimension() < ni,
             "provided index is smaller than or equal to previous index, or zero"
@@ -127,7 +133,10 @@ impl<'a> CartesianProduct<'a> {
     }
 }
 
-impl<'a> Constraint for CartesianProduct<'a> {
+impl<'a, T> Constraint<T> for CartesianProduct<'a, T>
+where
+    T: OptFloat,
+{
     /// Project onto Cartesian product of constraints
     ///
     /// The given vector `x` is updated with the projection on the set
@@ -136,7 +145,7 @@ impl<'a> Constraint for CartesianProduct<'a> {
     ///
     /// The method will panic if the dimension of `x` is not equal to the
     /// dimension of the Cartesian product (see `dimension()`)
-    fn project(&self, x: &mut [f64]) {
+    fn project(&self, x: &mut [T]) {
         assert!(x.len() == self.dimension(), "x has wrong size");
         let mut j = 0;
         self.idx

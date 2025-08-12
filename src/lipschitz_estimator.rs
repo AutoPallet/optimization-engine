@@ -37,37 +37,40 @@
 //! ```
 //!
 
+use crate::core::OptFloat;
 use crate::{matrix_operations, SolverError};
 
 const DEFAULT_DELTA: f64 = 1e-6;
 const DEFAULT_EPSILON: f64 = 1e-6;
 
 /// Structure for the computation of estimates of the Lipschitz constant of mappings
-pub struct LipschitzEstimator<'a, F>
+pub struct LipschitzEstimator<'a, F, T>
 where
-    F: Fn(&[f64], &mut [f64]) -> Result<(), SolverError>,
+    F: Fn(&[T], &mut [T]) -> Result<(), SolverError>,
+    T: OptFloat,
 {
     /// `u_decision_var` is the point where the Lipschitz constant is estimated
-    u_decision_var: &'a mut [f64],
+    u_decision_var: &'a mut [T],
     ///  internally allocated workspace memory
-    workspace: Vec<f64>,
+    workspace: Vec<T>,
     /// `function_value_at_u` a vector which is updated with the
     /// value of the given function, `F`, at `u`; the provided value
     /// of `function_value_at_u_p` is not used
-    function_value_at_u: &'a mut [f64],
+    function_value_at_u: &'a mut [T],
     ///
     /// Function whose Lipschitz constant is to be approximated
     ///
     /// For example, in optimization, this is the gradient (Jacobian matrix)
     /// of the cost function (this is a closure)
     function: &'a F,
-    epsilon_lip: f64,
-    delta_lip: f64,
+    epsilon_lip: T,
+    delta_lip: T,
 }
 
-impl<'a, F> LipschitzEstimator<'a, F>
+impl<'a, F, T> LipschitzEstimator<'a, F, T>
 where
-    F: Fn(&[f64], &mut [f64]) -> Result<(), SolverError>,
+    F: Fn(&[T], &mut [T]) -> Result<(), SolverError>,
+    T: OptFloat,
 {
     /// Creates a new instance of this structure
     ///
@@ -88,18 +91,18 @@ where
     ///
     ///
     pub fn new(
-        u_: &'a mut [f64],
+        u_: &'a mut [T],
         f_: &'a F,
-        function_value_: &'a mut [f64],
-    ) -> LipschitzEstimator<'a, F> {
+        function_value_: &'a mut [T],
+    ) -> LipschitzEstimator<'a, F, T> {
         let n: usize = u_.len();
         LipschitzEstimator {
             u_decision_var: u_,
-            workspace: vec![0.0_f64; n],
+            workspace: vec![T::zero(); n],
             function_value_at_u: function_value_,
             function: f_,
-            epsilon_lip: DEFAULT_EPSILON,
-            delta_lip: DEFAULT_DELTA,
+            epsilon_lip: T::from(DEFAULT_EPSILON).unwrap(),
+            delta_lip: T::from(DEFAULT_DELTA).unwrap(),
         }
     }
 
@@ -113,8 +116,8 @@ where
     /// # Panics
     /// The method will panic if `delta` is non positive
     ///
-    pub fn with_delta(mut self, delta: f64) -> Self {
-        assert!(delta > 0.0);
+    pub fn with_delta(mut self, delta: T) -> Self {
+        assert!(delta > T::zero());
         self.delta_lip = delta;
         self
     }
@@ -129,11 +132,12 @@ where
     /// # Panics
     /// The method will panic if `epsilon` is non positive
     ///
-    pub fn with_epsilon(mut self, epsilon: f64) -> Self {
-        assert!(epsilon > 0.0);
+    pub fn with_epsilon(mut self, epsilon: T) -> Self {
+        assert!(epsilon > T::zero());
         self.epsilon_lip = epsilon;
         self
     }
+
     ///
     /// Getter method for the Jacobian
     ///
@@ -143,7 +147,7 @@ where
     ///
     /// If `estimate_local_lipschitz` has not been computed, the result
     /// will point to a zero vector.
-    pub fn get_function_value(&self) -> &[f64] {
+    pub fn get_function_value(&self) -> &[T] {
         self.function_value_at_u
     }
 
@@ -180,7 +184,7 @@ where
     /// No rust-side panics, unless the C function which is called via this interface
     /// fails.
     ///
-    pub fn estimate_local_lipschitz(&mut self) -> Result<f64, SolverError> {
+    pub fn estimate_local_lipschitz(&mut self) -> Result<T, SolverError> {
         // function_value = gradient(u, p)
         (self.function)(self.u_decision_var, self.function_value_at_u)?;
         let epsilon_lip = self.epsilon_lip;

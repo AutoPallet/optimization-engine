@@ -1,16 +1,19 @@
 //! Status of the result of a solver (number of iterations, etc)
 //!
 //!
-use crate::core::ExitStatus;
 use std::time;
 
+use crate::core::{ExitStatus, OptFloat};
 /// Solver status
 ///
 /// This structure contais information about the solver status. Instances of
 /// `SolverStatus` are returned by optimizers.
 ///
 #[derive(Debug, PartialEq, Copy, Clone)]
-pub struct SolverStatus {
+pub struct SolverStatus<T>
+where
+    T: OptFloat,
+{
     /// exit status of the algorithm
     exit_status: ExitStatus,
     /// number of iterations for convergence
@@ -18,12 +21,15 @@ pub struct SolverStatus {
     /// time it took to solve
     solve_time: time::Duration,
     /// norm of the fixed-point residual (FPR)
-    fpr_norm: f64,
+    fpr_norm: T,
     /// cost value at the candidate solution
-    cost_value: f64,
+    cost_value: T,
 }
 
-impl SolverStatus {
+impl<T> SolverStatus<T>
+where
+    T: OptFloat,
+{
     /// Constructs a new instance of SolverStatus
     ///
     /// ## Arguments
@@ -39,9 +45,9 @@ impl SolverStatus {
         exit_status: ExitStatus,
         num_iter: usize,
         solve_time: time::Duration,
-        fpr_norm: f64,
-        cost_value: f64,
-    ) -> SolverStatus {
+        fpr_norm: T,
+        cost_value: T,
+    ) -> SolverStatus<T> {
         SolverStatus {
             exit_status,
             num_iter,
@@ -67,12 +73,12 @@ impl SolverStatus {
     }
 
     /// norm of the fixed point residual
-    pub fn norm_fpr(&self) -> f64 {
+    pub fn norm_fpr(&self) -> T {
         self.fpr_norm
     }
 
     /// value of the cost at the solution
-    pub fn cost_value(&self) -> f64 {
+    pub fn cost_value(&self) -> T {
         self.cost_value
     }
 
