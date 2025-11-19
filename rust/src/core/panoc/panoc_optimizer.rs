@@ -13,6 +13,8 @@ use num::Float;
 use std::iter::Sum;
 use std::time;
 
+use crate::panoc::panoc_engine::SolveStepInfo;
+
 const MAX_ITER: usize = 100_usize;
 
 /// Optimizer using the PANOC algorithm
@@ -58,6 +60,12 @@ where
             max_iter: MAX_ITER,
             max_duration: None,
         }
+    }
+
+    /// Sets a hook that is called at each iteration of the PANOC solver
+    pub fn with_debug_hook(mut self, hook: Box<dyn Fn(&SolveStepInfo<T>) + 'a>) -> Self {
+        self.panoc_engine.set_debug_hook(hook);
+        self
     }
 
     /// Sets the tolerance on the norm of the fixed-point residual
