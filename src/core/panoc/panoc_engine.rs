@@ -8,6 +8,21 @@ const MAX_LIPSCHITZ_UPDATE_ITERATIONS: usize = 10;
 /// Maximum number of linesearch iterations
 const MAX_LINESEARCH_ITERATIONS: u32 = 10;
 
+/// Information about a step of the PANOC solver
+#[derive(Debug)]
+pub struct SolveStepInfo<T> {
+    /// Iteration number
+    pub iteration: usize,
+    /// Current state variables
+    pub u: Vec<T>,
+    /// Fixed-point residual
+    pub fpr: Vec<T>,
+    /// Gradient of the cost function
+    pub gradient: Vec<T>,
+    /// Whether the solver should exit at this step
+    pub exit: bool,
+}
+
 /// Engine for PANOC algorithm
 pub struct PANOCEngine<'a, GradientType, ConstraintType, CostType, T>
 where
@@ -18,6 +33,7 @@ where
 {
     problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
     pub(crate) cache: &'a mut PANOCCache<T>,
+    debug_hook: Option<Box<dyn Fn(&SolveStepInfo<T>) + 'a>>,
 }
 
 impl<'a, GradientType, ConstraintType, CostType, T>
@@ -43,7 +59,15 @@ where
         problem: Problem<'a, GradientType, ConstraintType, CostType, T>,
         cache: &'a mut PANOCCache<T>,
     ) -> PANOCEngine<'a, GradientType, ConstraintType, CostType, T> {
-        PANOCEngine { problem, cache }
+        PANOCEngine {
+            problem,
+            cache,
+            debug_hook: None,
+        }
+    }
+
+    pub fn set_debug_hook(&mut self, hook: Box<dyn Fn(&SolveStepInfo<T>) + 'a>) {
+        self.debug_hook = Some(hook);
     }
 
     /// Estimate the local Lipschitz constant at `u`
@@ -312,6 +336,15 @@ where
         // exit if the exit conditions are satisfied (||gamma*fpr|| < eps and,
         // if activated, ||gamma*r + df - df_prev|| < eps_akkt)
         if self.cache.exit_condition() {
+            if let Some(debug_hook) = self.debug_hook.as_ref() {
+                debug_hook(&SolveStepInfo {
+                    iteration: self.cache.iteration,
+                    u: u_current.to_vec(),
+                    fpr: self.cache.gamma_fpr.to_vec(),
+                    gradient: self.cache.gradient_u.to_vec(),
+                    exit: true,
+                });
+            }
             return Ok(false);
         }
         self.update_lipschitz_constant(u_current)?; // update lipschitz constant
@@ -321,6 +354,16 @@ where
             self.update_no_linesearch(u_current)?;
         } else {
             self.linesearch(u_current)?;
+        }
+
+        if let Some(debug_hook) = self.debug_hook.as_ref() {
+            debug_hook(&SolveStepInfo {
+                iteration: self.cache.iteration,
+                u: u_current.to_vec(),
+                fpr: self.cache.gamma_fpr.to_vec(),
+                gradient: self.cache.gradient_u.to_vec(),
+                exit: false,
+            });
         }
 
         self.cache.iteration += 1;

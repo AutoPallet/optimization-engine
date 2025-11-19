@@ -5,6 +5,7 @@ use std::time;
 use crate::core::panoc::panoc_engine::PANOCEngine;
 use crate::core::panoc::PANOCCache;
 use crate::core::{AlgorithmEngine, ExitStatus, OptFloat, Optimizer, Problem, SolverStatus};
+use crate::panoc::panoc_engine::SolveStepInfo;
 use crate::{constraints, matrix_operations, FunctionCallResult, SolverError};
 
 const MAX_ITER: usize = 100_usize;
@@ -51,6 +52,12 @@ where
             max_iter: MAX_ITER,
             max_duration: None,
         }
+    }
+
+    /// Sets a hook that is called at each iteration of the PANOC solver
+    pub fn with_debug_hook(mut self, hook: Box<dyn Fn(&SolveStepInfo<T>) + 'a>) -> Self {
+        self.panoc_engine.set_debug_hook(hook);
+        self
     }
 
     /// Sets the tolerance on the norm of the fixed-point residual
