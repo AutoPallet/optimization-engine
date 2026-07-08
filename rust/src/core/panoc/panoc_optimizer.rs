@@ -431,6 +431,9 @@ mod tests {
             let mut u_solution = [-20.0, 10.0, 0.2];
 
             let status = panoc.solve(&mut u_solution).unwrap();
+            // release the mutable borrow of panoc_cache (the optimizer's debug
+            // hook extends the borrow to the destructor)
+            drop(panoc);
 
             let distance_to_last_half_step =
                 crate::matrix_operations::norm_inf_diff(&u_solution, &panoc_cache.u_half_step);

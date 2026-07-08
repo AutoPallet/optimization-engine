@@ -168,6 +168,9 @@ fn t_zero_gamma_l() {
 
     // Invoke the solver.
     panoc_engine.solve(u).unwrap();
+    // release the mutable borrow of panoc_cache (the engine's debug hook
+    // extends the borrow to the destructor)
+    drop(panoc_engine);
     println!("norm_gamma_fpr = {}", panoc_cache.norm_gamma_fpr);
     println!("u = {:?}", u);
     println!("iters = {}", panoc_cache.iteration);
@@ -211,6 +214,9 @@ fn t_zero_gamma_huber() {
 
     // Invoke the solver.
     panoc_engine.solve(u).unwrap();
+    // release the mutable borrow of panoc_cache (the engine's debug hook
+    // extends the borrow to the destructor)
+    drop(panoc_engine);
     println!("norm_gamma_fpr = {}", panoc_cache.norm_gamma_fpr);
     println!("u = {:?}", u);
     println!("iters = {}", panoc_cache.iteration);

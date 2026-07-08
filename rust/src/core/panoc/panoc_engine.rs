@@ -20,11 +20,17 @@ fn gamma_l_coeff<T: Float>() -> T {
 //const SIGMA_COEFF: f64 = 0.49;
 
 fn delta_lipschitz<T: Float>() -> T {
-    cast::<T>(1e-12)
+    // Absolute finite-difference step for the initial Lipschitz estimate.
+    // 1e-12 is fine for f64 but far below what f32 can resolve for O(1)
+    // gradient entries (grad(u + h) - grad(u) rounds to exactly zero), so
+    // floor the step at ~1000 ULP of 1.0: f64 keeps 1e-12, f32 gets ~1.2e-4.
+    cast::<T>(1e-12).max(T::epsilon() * cast::<T>(1e3))
 }
 
 fn epsilon_lipschitz<T: Float>() -> T {
-    cast::<T>(1e-6)
+    // Relative finite-difference step, floored at sqrt(machine epsilon):
+    // f64 keeps 1e-6, f32 gets ~3.5e-4.
+    cast::<T>(1e-6).max(T::epsilon().sqrt())
 }
 
 fn lipschitz_update_epsilon<T: Float>() -> T {
@@ -467,8 +473,11 @@ where
             ));
         }
         self.cache_gradient_norm();
-        self.cache.gamma =
-            gamma_l_coeff::<T>() / self.cache.lipschitz_constant.max(min_l_estimate());
+        // Store the floored estimate: if L stayed at zero, the doubling in
+        // update_lipschitz_constant would keep it at zero forever and the
+        // max_lipschitz_constant guard could never engage.
+        self.cache.lipschitz_constant = self.cache.lipschitz_constant.max(min_l_estimate());
+        self.cache.gamma = gamma_l_coeff::<T>() / self.cache.lipschitz_constant;
         self.cache.sigma = (T::one() - gamma_l_coeff::<T>()) / (cast::<T>(4.0) * self.cache.gamma);
         self.gradient_step(u_current); // updated self.cache.gradient_step
         self.half_step()?; // updates self.cache.u_half_step
@@ -714,6 +723,46 @@ mod tests {
     }
 
     #[test]
+    fn t_panoc_init_f32_zero_start() {
+        // Regression test: with f64-tuned finite-difference constants the
+        // Lipschitz estimate at an all-zero f32 warm start underflowed to
+        // exactly zero (grad(u + 1e-12) rounds to grad(u) in f32), which the
+        // 1e-10 floor turned into gamma = 9.5e9 and a first projected step
+        // slammed onto the constraint bounds.
+        let bounds = constraints::NoConstraints::new();
+        let problem = Problem::new(
+            &bounds,
+            // grad of sum(u_i + 0.5 u_i^2); true Lipschitz constant is 1
+            |u: &[f32], grad: &mut [f32]| -> FunctionCallResult {
+                grad.iter_mut().zip(u.iter()).for_each(|(g, &u)| *g = 1.0 + u);
+                Ok(())
+            },
+            |u: &[f32], c: &mut f32| -> FunctionCallResult {
+                *c = u.iter().map(|&x| x + 0.5 * x * x).sum();
+                Ok(())
+            },
+        );
+        let mut panoc_cache = PANOCCache::<f32>::new(4, 1e-6_f32, 3);
+        let mut panoc_engine = PANOCEngine::new(problem, &mut panoc_cache);
+        let mut u = [0.0_f32; 4];
+
+        panoc_engine.init(&mut u).unwrap();
+
+        let lipschitz = panoc_engine.cache.lipschitz_constant;
+        assert!(
+            (lipschitz - 1.0).abs() < 1e-2,
+            "f32 Lipschitz estimate at zero warm start should be ~1, got {}",
+            lipschitz
+        );
+        let gamma = panoc_engine.cache.gamma;
+        assert!(
+            gamma > 0.9 && gamma < 1.0,
+            "gamma should be ~0.95/L, got {}",
+            gamma
+        );
+    }
+
+    #[test]
     fn t_panoc_init_f32() {
         let bounds = constraints::NoConstraints::new();
         let problem = Problem::new(
@@ -744,9 +793,12 @@ mod tests {
             1e-6,
             "gradient at u",
         );
+        // The Lipschitz estimator perturbs `u` in place by the finite-difference
+        // step h, so compute the expected half step from the perturbed `u` and
+        // the recorded gradient (which was evaluated at the original point).
         let expected_half_step = [
-            (1.0_f32 - panoc_engine.cache.gamma) * 1_000.0_f32,
-            (1.0_f32 - panoc_engine.cache.gamma) * 2_000.0_f32,
+            u[0] - panoc_engine.cache.gamma * panoc_engine.cache.gradient_u[0],
+            u[1] - panoc_engine.cache.gamma * panoc_engine.cache.gradient_u[1],
         ];
         assert!((panoc_engine.cache.u_half_step[0] - expected_half_step[0]).abs() < 5e-3);
         assert!((panoc_engine.cache.u_half_step[1] - expected_half_step[1]).abs() < 5e-3);
